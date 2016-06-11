@@ -18,7 +18,11 @@ html, body {
 }
 
 
-.droppoint, .droppoint svg {
+.pointa, .pointa svg {
+  position: absolute;
+}
+
+.pointb, .pointb svg {
   position: absolute;
 }
 
@@ -50,17 +54,34 @@ html, body {
 }
 
 
-.droppoint svg {
+
+.pointa svg {
   width: 60px;
   height: 20px;
   padding-right: 100px;
   font: 10px sans-serif;
 }
   
-.droppoint circle {
+.pointa circle {
   fill: red;
   stroke-width: 1.5px;
 }
+
+
+
+.pointb svg {
+  width: 60px;
+  height: 20px;
+  padding-right: 100px;
+  font: 10px sans-serif;
+}
+  
+.pointb circle {
+  fill: blue;
+  stroke-width: 1.5px;
+}
+
+
 
 </style>
 
@@ -121,8 +142,8 @@ var label = svg.append("text")
 
 var loadMap = function(rows){
   
-  var centerLat = d3.mean(rows, function(d){return d.drop_location_lat; });
-  var centerLng = d3.mean(rows, function(d){return d.drop_location_lng; });
+  var centerLat = d3.mean(rows, getDataItemLat);
+  var centerLng = d3.mean(rows, getDataItemLng);
 
   return map = new google.maps.Map(d3.select("#map").node(), {
     zoom: 12,
@@ -135,16 +156,23 @@ var loadMap = function(rows){
 
 var dateFormat = d3.time.format("%d/%m/%y %H:%M");//10/05/16 19:03
 
+var getDataItemTime = function(data) { return data.created_at; };
+var getDataItemLat = function(data) { return data.pickup_location_lat; };
+var getDataItemLng = function(data) { return data.pickup_location_lng; };
+
+var getDataItemLat2 = function(data) { return data.drop_location_lat; };
+var getDataItemLng2 = function(data) { return data.drop_location_lng; };
+
+
 var parseData = function(d){
   return {
     pickup_location_lat: +d.pickup_location_lat, 
     pickup_location_lng: +d.pickup_location_lng,
     drop_location: d.drop_location, 
-   // created_at: new Date(d.created_at),
+    created_at: new Date(d.created_at),
     krn: +d.krn,
     pickup_address: d.pickup_address, 
-    completed_at: dateFormat.parse(d.completed_at),
-    created_at: dateFormat.parse(d.created_at),
+    //completed_at: dateFormat.parse(d.completed_at),
     //completed_at: new Date(d.completed_at), 
     share_id: d.share_id, 
     eta: +d.eta,
@@ -160,10 +188,9 @@ var frequency_analysis = function(data_array){
 //modify these variables - d.completed_at, 240
 //data_array need not be sorted 
   var total_intervals = 240;
-  var key_function = function(d){return d.completed_at};
 
 
-  var scale = d3.time.scale().range([0, total_intervals-1]).domain(d3.extent(data_array.map(key_function)));
+  var scale = d3.time.scale().range([0, total_intervals-1]).domain(d3.extent(data_array.map(getDataItemTime)));
 
   var frequency = [];
 
@@ -172,7 +199,7 @@ var frequency_analysis = function(data_array){
   }
 
   for (i = 0; i < data_array.length; i++) { 
-    var bucket = Math.floor(scale(key_function(data_array[i])));
+    var bucket = Math.floor(scale(getDataItemTime(data_array[i])));
     frequency[bucket].demand += 1; 
   }
   
@@ -182,17 +209,16 @@ var frequency_analysis = function(data_array){
 
 
 // Browsers don't allow to read from local file-system. So started a local server...
-d3.csv("http://localhost:8888/trip_data.csv", 
+d3.csv("http://localhost:8888/full_result_26784185.csv", 
   parseData, 
   function(error, rows) { 
   if (error) throw error;
   console.log(rows); 
 
-  var dataFilter = function(d) {return true;};
+  var dataFilter = function(d) {return false;};
 
-  // x-axis
   var data_time_buckets = frequency_analysis(rows, 240);
-  console.log(data_time_buckets);
+  //console.log(data_time_buckets);
 
   x.domain(d3.extent(data_time_buckets.map(function(d) { return d.datetime; })));
   y.domain([0, d3.max(data_time_buckets.map(function(d) { return d.demand; }))]);
@@ -217,12 +243,16 @@ d3.csv("http://localhost:8888/trip_data.csv",
 
  // Add the container when the overlay is added to the map.
   overlay.onAdd = function() {
-    var layer = d3.select(this.getPanes().overlayLayer).append("div")
-        .attr("class", "droppoint");
+    var layer1 = d3.select(this.getPanes().overlayLayer).append("div")
+        .attr("class", "pointa");
 
+
+    var layer2 = d3.select(this.getPanes().overlayLayer).append("div")
+        .attr("class", "pointb");
 
     overlay.onRemove = function(){
-      layer.remove();
+      layer1.remove();
+      layer2.remove();
     }
 
     // Draw each marker as a separate SVG element.
@@ -234,30 +264,38 @@ d3.csv("http://localhost:8888/trip_data.csv",
 
       var filtered_rows = rows.filter(dataFilter);
 
-      var marker_all = layer.selectAll("svg")
-          .data(filtered_rows)
-          .each(transform) ;// update existing markers
 
-      var marker = marker_all.enter().append("svg")
-          .each(transform)
-          .attr("class", "marker");
-
-      marker_all.exit().remove();
-
-      // Add a circle.
-      marker.append("circle")
-          .attr("r", 4.5)
-          .attr("cx", padding)
-          .attr("cy", padding);
+      addPoints(layer1, getDataItemLat, getDataItemLng);
+      addPoints(layer2, getDataItemLat2, getDataItemLng2);
 
 
-      function transform(d) {
-        d = new google.maps.LatLng(d.drop_location_lat, d.drop_location_lng);
-        console.log(d);
-        d = projection.fromLatLngToDivPixel(d);
-        return d3.select(this)
-            .style("left", (d.x - padding) + "px")
-            .style("top", (d.y - padding) + "px");
+      function addPoints(layer, getLat, getLng){
+
+        var marker_all = layer.selectAll("svg")
+            .data(filtered_rows)
+            .each(transform) ;// update existing markers
+
+        var marker = marker_all.enter().append("svg")
+            .each(transform)
+            .attr("class", "marker");
+
+        marker_all.exit().remove();
+
+        // Add a circle.
+        marker.append("circle")
+            .attr("r", 4.5)
+            .attr("cx", padding)
+            .attr("cy", padding);
+
+
+        function transform(d) {
+          d = new google.maps.LatLng(getLat(d), getLng(d));
+          d = projection.fromLatLngToDivPixel(d);
+
+          return d3.select(this)
+              .style("left", (d.x - padding) + "px")
+              .style("top", (d.y - padding) + "px");
+        }
       }
     };
   };
@@ -298,8 +336,8 @@ d3.csv("http://localhost:8888/trip_data.csv",
     function mouseout() {
       label.classed("active", false);
 
-      dataFilter = function(d) { return true; };
-      overlay.draw();
+      //dataFilter = function(d) { return true; };
+      //overlay.draw();
 
     }
 
@@ -320,45 +358,19 @@ d3.csv("http://localhost:8888/trip_data.csv",
     var time1, time2;
     if (t1 < data_time_buckets.length) 
       time1= data_time_buckets[t1].datetime;
-    else time1 = d3.max(rows, function(d){return d.completed_at});
+    else time1 = d3.max(rows, getDataItemTime);
 
     if (t1+1 < data_time_buckets.length)
       time2 = data_time_buckets[t1+1].datetime;
-    else time2 = d3.max(rows, function(d){return d.completed_at});
+    else time2 = d3.max(rows, getDataItemTime);
 
 
     dataFilter = function(d) { 
-      return (d.completed_at >= time1) && (d.completed_at <= time2);
+      return (getDataItemTime(d) >= time1) && (getDataItemTime(d) <= time2);
     };
 
     overlay.draw();
-  }
-
-
-  // Updates the display to show the specified year. - NOT USED
-  function displayTime2(time, mousex) {
-    label.text(time);
-    var t1 = x.invert(0);
-    var t2 = x.invert(width_scale);
-    var i = 0;
-
-    for(i = 0; i < data_time_buckets.lengh ; i++){
-        if (data_time_buckets[i].datetime < time){
-            t1 = data_time_buckets[i].datetime;
-        } else break;
-    } 
-
-    if (i + 1< data_time_buckets.lengh)
-      t2 = data_time_buckets[i+1].datetime;
-
-    console.log(t1);
-    console.log(t2);
-    dataFilter = function(d) { 
-      (d.completed_at >= t1) && (d.completed_at < t2);
-    };
-    overlay.setMap(map);
-
-  }
+  };
 
 });  
 
