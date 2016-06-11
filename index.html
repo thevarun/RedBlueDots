@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<meta name="viewport" content="initial-scale=1.0, user-scalable=no"/>
+<style>
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+#map {
+  width: 800px;
+  height: 600px;
+  margin: 10px;
+  padding: 0;
+}
+
+
+.droppoint, .droppoint svg {
+  position: absolute;
+}
+
+
+.year.label {
+  font: 50 24px "Helvetica Neue";
+  fill: #aaa;
+}
+
+
+.area {
+  fill: steelblue;
+  clip-path: url(#clip);
+}
+
+
+.axis path,
+.axis line {
+  fill: none;
+  stroke: #000;
+  shape-rendering: crispEdges;
+}
+
+
+.overlay {
+  fill: none;
+  pointer-events: all;
+  cursor: ew-resize;
+}
+
+
+.droppoint svg {
+  width: 60px;
+  height: 20px;
+  padding-right: 100px;
+  font: 10px sans-serif;
+}
+  
+.droppoint circle {
+  fill: red;
+  stroke-width: 1.5px;
+}
+
+</style>
+
+<div id="map"></div>
+
+<script src="https://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+<script src="http://maps.google.com/maps/api/js?sensor=false"></script>
+
+<script>
+
+// axis layout
+
+var margin = {top: 20, right: 10, bottom: 20, left: 10},
+    width_scale = 800 - margin.left - margin.right,
+    height_scale = 100 - margin.top - margin.bottom; // for lower axis
+
+
+var x = d3.time.scale().range([0, width_scale]),
+      y = d3.scale.linear().range([height_scale, 0]);
+
+
+var xAxis = d3.svg.axis().scale(x).orient("bottom");
+
+
+var area = d3.svg.area()
+    .interpolate("monotone")
+    .x(function(d) { return x(d.datetime); })
+    .y0(height_scale)
+    .y1(function(d) { return y(d.demand); });
+
+
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width_scale + margin.left + margin.right)
+    .attr("height", height_scale + margin.top + margin.bottom);
+
+
+var context = svg.append("g")
+    .attr("class", "context")
+    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+
+// time label
+
+// Add the year label; the value is set on transition.
+var label = svg.append("text")
+    .attr("class", "year label")
+    .attr("text-anchor", "end")
+    .attr("y", 24)
+    .attr("x", width_scale)
+    .text(1800);
+
+
+  
+
+
+// Create the Google Map…
+
+var loadMap = function(rows){
+  
+  var centerLat = d3.mean(rows, function(d){return d.drop_location_lat; });
+  var centerLng = d3.mean(rows, function(d){return d.drop_location_lng; });
+
+  return map = new google.maps.Map(d3.select("#map").node(), {
+    zoom: 12,
+    center: new google.maps.LatLng(centerLat, centerLng),
+    mapTypeId: google.maps.MapTypeId.TERRAIN
+  });
+};
+
+//////////// Load thy data ////////////////////
+
+var dateFormat = d3.time.format("%d/%m/%y %H:%M");//10/05/16 19:03
+
+var parseData = function(d){
+  return {
+    pickup_location_lat: +d.pickup_location_lat, 
+    pickup_location_lng: +d.pickup_location_lng,
+    drop_location: d.drop_location, 
+   // created_at: new Date(d.created_at),
+    krn: +d.krn,
+    pickup_address: d.pickup_address, 
+    completed_at: dateFormat.parse(d.completed_at),
+    created_at: dateFormat.parse(d.created_at),
+    //completed_at: new Date(d.completed_at), 
+    share_id: d.share_id, 
+    eta: +d.eta,
+    distance: +d.distance,
+    drop_location_lng: +d.drop_location_lng,
+    drop_location_lat: +d.drop_location_lat,
+    CWT: +d.CWT 
+  };
+};
+
+
+var frequency_analysis = function(data_array){
+//modify these variables - d.completed_at, 240
+//data_array need not be sorted 
+  var total_intervals = 240;
+  var key_function = function(d){return d.completed_at};
+
+
+  var scale = d3.time.scale().range([0, total_intervals-1]).domain(d3.extent(data_array.map(key_function)));
+
+  var frequency = [];
+
+  for (i = 0; i < total_intervals; i++) { 
+    frequency.push({ datetime: scale.invert(i) , demand:0});
+  }
+
+  for (i = 0; i < data_array.length; i++) { 
+    var bucket = Math.floor(scale(key_function(data_array[i])));
+    frequency[bucket].demand += 1; 
+  }
+  
+  return frequency;
+};
+
+
+
+// Browsers don't allow to read from local file-system. So started a local server...
+d3.csv("http://localhost:8888/trip_data.csv", 
+  parseData, 
+  function(error, rows) { 
+  if (error) throw error;
+  console.log(rows); 
+
+  var dataFilter = function(d) {return true;};
+
+  // x-axis
+  var data_time_buckets = frequency_analysis(rows, 240);
+  console.log(data_time_buckets);
+
+  x.domain(d3.extent(data_time_buckets.map(function(d) { return d.datetime; })));
+  y.domain([0, d3.max(data_time_buckets.map(function(d) { return d.demand; }))]);
+
+
+  context.append("path")
+      .datum(data_time_buckets)
+      .attr("class", "area")
+      .attr("d", area);
+
+  context.append("g")
+      .attr("class", "x axis")
+      .attr("transform", "translate(0," + height_scale + ")")
+      .call(xAxis);
+
+
+  // map work starts here      
+  var map = loadMap(rows); 
+  var overlay = new google.maps.OverlayView();
+
+
+
+ // Add the container when the overlay is added to the map.
+  overlay.onAdd = function() {
+    var layer = d3.select(this.getPanes().overlayLayer).append("div")
+        .attr("class", "droppoint");
+
+
+    overlay.onRemove = function(){
+      layer.remove();
+    }
+
+    // Draw each marker as a separate SVG element.
+    // We could use a single SVG, but what size would it have?
+    overlay.draw = function() {
+      var projection = this.getProjection(),
+          padding = 10;
+
+
+      var filtered_rows = rows.filter(dataFilter);
+
+      var marker_all = layer.selectAll("svg")
+          .data(filtered_rows)
+          .each(transform) ;// update existing markers
+
+      var marker = marker_all.enter().append("svg")
+          .each(transform)
+          .attr("class", "marker");
+
+      marker_all.exit().remove();
+
+      // Add a circle.
+      marker.append("circle")
+          .attr("r", 4.5)
+          .attr("cx", padding)
+          .attr("cy", padding);
+
+
+      function transform(d) {
+        d = new google.maps.LatLng(d.drop_location_lat, d.drop_location_lng);
+        console.log(d);
+        d = projection.fromLatLngToDivPixel(d);
+        return d3.select(this)
+            .style("left", (d.x - padding) + "px")
+            .style("top", (d.y - padding) + "px");
+      }
+    };
+  };
+
+  // Bind our overlay to the map…
+  overlay.setMap(map);
+
+
+// Add an overlay for the year label. Enable interaction
+  var box = context.node().getBBox();
+
+  var mouseControl = svg.append("rect")
+        .attr("class", "overlay")
+        .attr("x", box.x)
+        .attr("y", box.y)
+        .attr("width", box.width)
+        .attr("height", box.height)
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")")
+        .on("mouseover", enableInteraction);
+
+  
+
+  function enableInteraction() {
+
+    // Cancel the current transition, if any.
+    //svg.transition().duration(0);
+
+    mouseControl
+        .on("mouseover", mouseover)
+        .on("mouseout", mouseout)
+        .on("mousemove", mousemove)
+        .on("touchmove", mousemove);
+
+    function mouseover() {
+      label.classed("active", true);
+    }
+
+    function mouseout() {
+      label.classed("active", false);
+
+      dataFilter = function(d) { return true; };
+      overlay.draw();
+
+    }
+
+    function mousemove() {
+      displayTime(x.invert(d3.mouse(this)[0]), d3.mouse(this)[0]);
+    }
+  };
+
+  // Updates the display to show the specified year.
+  function displayTime(time, mousex) {
+    label.text(time);
+    var t1 = data_time_buckets.length * (mousex/width_scale);
+    t1 = Math.floor(t1);
+
+    var t2 = x.invert(width_scale);
+    var i = 0;
+
+    var time1, time2;
+    if (t1 < data_time_buckets.length) 
+      time1= data_time_buckets[t1].datetime;
+    else time1 = d3.max(rows, function(d){return d.completed_at});
+
+    if (t1+1 < data_time_buckets.length)
+      time2 = data_time_buckets[t1+1].datetime;
+    else time2 = d3.max(rows, function(d){return d.completed_at});
+
+
+    dataFilter = function(d) { 
+      return (d.completed_at >= time1) && (d.completed_at <= time2);
+    };
+
+    overlay.draw();
+  }
+
+
+  // Updates the display to show the specified year. - NOT USED
+  function displayTime2(time, mousex) {
+    label.text(time);
+    var t1 = x.invert(0);
+    var t2 = x.invert(width_scale);
+    var i = 0;
+
+    for(i = 0; i < data_time_buckets.lengh ; i++){
+        if (data_time_buckets[i].datetime < time){
+            t1 = data_time_buckets[i].datetime;
+        } else break;
+    } 
+
+    if (i + 1< data_time_buckets.lengh)
+      t2 = data_time_buckets[i+1].datetime;
+
+    console.log(t1);
+    console.log(t2);
+    dataFilter = function(d) { 
+      (d.completed_at >= t1) && (d.completed_at < t2);
+    };
+    overlay.setMap(map);
+
+  }
+
+});  
+
+</script>

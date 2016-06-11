@@ -1,0 +1,30 @@
+
+
+
+== Resources ==============
+
+Data loading
+https://github.com/d3/d3/wiki/CSV
+http://stackoverflow.com/questions/37424538/d3-js-change-time-format-and-export-data-into-csv
+
+Google Maps
+http://bl.ocks.org/bsn/1125458
+https://developers.google.com/maps/documentation/javascript/tutorial
+https://developers.google.com/maps/documentation/javascript/3.22/reference#OverlayView
+
+D3 concepts
+https://github.com/d3/d3/wiki#using
+https://github.com/d3/d3/wiki/Arrays
+https://bost.ocks.org/mike/selection/
+https://bost.ocks.org/mike/transition/
+
+D3 examples
+https://bost.ocks.org/mike/circles/
+http://bl.ocks.org/mbostock/1667367
+https://bost.ocks.org/mike/nations/
+
+Time
+https://github.com/d3/d3/wiki/Time-Scales
+https://github.com/d3/d3/wiki/Time-Formatting#parse
+
+Created by Varun Torka 28/6/16
