@@ -17,6 +17,17 @@ html, body {
   padding: 0;
 }
 
+.mapoverlay {
+  width: 640px;
+  height: 440px;
+  position: absolute;
+  left: 80px;
+  top: 80px;
+  fill: none;
+  pointer-events: all;
+  cursor: crosshair;
+}
+
 
 .pointa, .pointa svg {
   position: absolute;
@@ -50,15 +61,14 @@ html, body {
 .overlay {
   fill: none;
   pointer-events: all;
-  cursor: ew-resize;
+  cursor: pointer;
 }
 
 
 
 .pointa svg {
-  width: 60px;
+  width: 20px;
   height: 20px;
-  padding-right: 100px;
   font: 10px sans-serif;
 }
   
@@ -70,9 +80,8 @@ html, body {
 
 
 .pointb svg {
-  width: 60px;
+  width: 20px;
   height: 20px;
-  padding-right: 100px;
   font: 10px sans-serif;
 }
   
@@ -81,6 +90,22 @@ html, body {
   stroke-width: 1.5px;
 }
 
+
+.paths {
+  position: absolute;
+  fill: none;
+  pointer-events: all;
+  cursor: crosshair;
+}
+
+.paths svg {
+  position: absolute;
+}
+
+.paths line {
+  stroke: grey;
+  stroke-width: 2px;
+}
 
 
 </style>
@@ -97,6 +122,8 @@ html, body {
 var margin = {top: 20, right: 10, bottom: 20, left: 10},
     width_scale = 800 - margin.left - margin.right,
     height_scale = 100 - margin.top - margin.bottom; // for lower axis
+
+var map_interaction_margin_inv = 80; 
 
 
 var x = d3.time.scale().range([0, width_scale]),
@@ -213,7 +240,7 @@ d3.csv("http://localhost:8888/full_result_26784185.csv",
   parseData, 
   function(error, rows) { 
   if (error) throw error;
-  console.log(rows); 
+  //console.log(rows); 
 
   var dataFilter = function(d) {return false;};
 
@@ -240,7 +267,6 @@ d3.csv("http://localhost:8888/full_result_26784185.csv",
   var overlay = new google.maps.OverlayView();
 
 
-
  // Add the container when the overlay is added to the map.
   overlay.onAdd = function() {
     var layer1 = d3.select(this.getPanes().overlayLayer).append("div")
@@ -249,6 +275,15 @@ d3.csv("http://localhost:8888/full_result_26784185.csv",
 
     var layer2 = d3.select(this.getPanes().overlayLayer).append("div")
         .attr("class", "pointb");
+
+
+    var paths = d3.select(this.getPanes().overlayLayer).append("div")
+        .attr("class", "paths");
+        //.append("g");
+
+    var map_mouse_control = d3.select("#map").append("rect")
+      .attr("class", "mapoverlay");
+
 
     overlay.onRemove = function(){
       layer1.remove();
@@ -263,11 +298,103 @@ d3.csv("http://localhost:8888/full_result_26784185.csv",
 
 
       var filtered_rows = rows.filter(dataFilter);
-
+      console.log("filtered:" + filtered_rows.length);
 
       addPoints(layer1, getDataItemLat, getDataItemLng);
       addPoints(layer2, getDataItemLat2, getDataItemLng2);
 
+
+      map_mouse_control.on("mousemove", showroutes);
+      map_mouse_control.on("mouseout", removeroutes);
+
+
+      function showroutes(){
+          var square_size = 0.01  ;
+
+          var x = d3.mouse(this)[0] + map_interaction_margin_inv;
+          var y = d3.mouse(this)[1] + map_interaction_margin_inv;
+
+          map_mouse_control.on("mouseover", showroutes)
+                            .on("touchmove", showroutes);
+
+
+          var point = new google.maps.Point(x, y);
+          var point_on_map = projection.fromContainerPixelToLatLng(point);
+
+          //console.log("x:" + x + " lat: " + point_on_map.lat());
+          //console.log("x:" + y + " lng: " + point_on_map.lng());
+
+          var further_filtered_rows = filtered_rows.filter(function(d){
+
+
+            return (getDistanceFromLatLonInKm(getDataItemLat(d), getDataItemLng(d),point_on_map.lat(), point_on_map.lng() ) < 0.75 ) || 
+            (getDistanceFromLatLonInKm(getDataItemLat2(d), getDataItemLng2(d),point_on_map.lat(), point_on_map.lng() ) < 0.75 ) ; 
+
+      //      return ( ( Math.abs(getDataItemLat(d) - point_on_map.lat()) < square_size) && (Math.abs(getDataItemLng(d) - point_on_map.lng()) < square_size) ) ||
+       //     (( Math.abs(getDataItemLat2(d) - point_on_map.lat()) < square_size) && (Math.abs(getDataItemLng2(d) - point_on_map.lng()) < square_size) ) ; 
+          });
+
+          console.log(further_filtered_rows.length);
+
+          lines = paths.selectAll("svg").data(further_filtered_rows);
+          lines.selectAll("g").remove();
+          lines.each(containerTransform);
+
+
+          lines.enter().append("svg")
+                .each(containerTransform);
+          //      .append("g")
+          //      .append("line");
+          //      .each(lineParameters);
+
+          lines.exit().remove();
+
+          function containerTransform(d){
+              var p1 = new google.maps.LatLng(getDataItemLat(d), getDataItemLng(d));
+              p1 = projection.fromLatLngToDivPixel(p1);
+
+              var p2 = new google.maps.LatLng(getDataItemLat2(d), getDataItemLng2(d));
+              p2 = projection.fromLatLngToDivPixel(p2);
+
+              var left = Math.min(p1.x, p2.x);
+              var top = Math.min(p1.y, p2.y) ;
+
+              return d3.select(this)
+                    .attr("width", Math.abs(p1.x - p2.x))
+                    .attr("height", Math.abs(p1.y - p2.y))
+                    .style("left", left + "px")
+                    .style("top", top + "px")
+                    .append("g")
+                    .append("line")
+                    .attr("x1", p1.x - left)
+                    .attr("y1", p1.y - top)
+                    .attr("x2", p2.x - left)
+                    .attr("y2", p2.y - top);
+          }
+
+          function lineParameters(d){
+              var p1 = new google.maps.LatLng(getDataItemLat(d), getDataItemLng(d));
+              p1 = projection.fromLatLngToDivPixel(p1);
+
+              var p2 = new google.maps.LatLng(getDataItemLat2(d), getDataItemLng2(d));
+              p2 = projection.fromLatLngToDivPixel(p2);
+
+
+              return d3.select(this)
+                    .attr("x1", p1.x)
+                    .attr("y1", p1.y)
+                    .attr("x2", p2.x)
+                    .attr("y2", p2.y);
+
+          }
+
+          //console.log(x + " " + point_on_map.lat());
+          //console.log(y + " " + point_on_map.lng());
+      }
+
+      function removeroutes(){
+      //  lines = paths.selectAll("line").remove();
+      }
 
       function addPoints(layer, getLat, getLng){
 
@@ -297,14 +424,16 @@ d3.csv("http://localhost:8888/full_result_26784185.csv",
               .style("top", (d.y - padding) + "px");
         }
       }
+
     };
+
   };
 
   // Bind our overlay to the map…
   overlay.setMap(map);
 
 
-// Add an overlay for the year label. Enable interaction
+// Add an overlay to enable interaction
   var box = context.node().getBBox();
 
   var mouseControl = svg.append("rect")
@@ -373,5 +502,24 @@ d3.csv("http://localhost:8888/full_result_26784185.csv",
   };
 
 });  
+
+function getDistanceFromLatLonInKm(lat1,lon1,lat2,lon2) {
+  var R = 6371; // Radius of the earth in km
+  var dLat = deg2rad(lat2-lat1);  // deg2rad below
+  var dLon = deg2rad(lon2-lon1); 
+  var a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2)
+    ; 
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+  var d = R * c; // Distance in km
+  return d;
+}
+
+function deg2rad(deg) {
+  return deg * (Math.PI/180)
+}
+
 
 </script>
