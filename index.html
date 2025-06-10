@@ -221,13 +221,13 @@ var frequency_analysis = function(data_array){
 
   var frequency = [];
 
-  for (i = 0; i < total_intervals; i++) { 
+  for (var i = 0; i < total_intervals; i++) {
     frequency.push({ datetime: scale.invert(i) , demand:0});
   }
 
-  for (i = 0; i < data_array.length; i++) { 
+  for (var i = 0; i < data_array.length; i++) {
     var bucket = Math.floor(scale(getDataItemTime(data_array[i])));
-    frequency[bucket].demand += 1; 
+    frequency[bucket].demand += 1;
   }
   
   return frequency;
@@ -336,7 +336,7 @@ d3.csv("http://localhost:8888/full_result_26784185.csv",
 
           console.log(further_filtered_rows.length);
 
-          lines = paths.selectAll("svg").data(further_filtered_rows);
+          var lines = paths.selectAll("svg").data(further_filtered_rows);
           lines.selectAll("g").remove();
           lines.each(containerTransform);
 
